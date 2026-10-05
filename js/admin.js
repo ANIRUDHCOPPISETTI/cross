@@ -495,8 +495,9 @@ function renderPreview(puzzle) {
       if (cell.blocked) {
         html += `<div class="xw-cell blocked" style="width:${cellSize}px;height:${cellSize}px;"></div>`;
       } else {
+        const numLabel = [cell.acrossNumber, cell.downNumber].filter(n => n != null).join(',');
         html += `<div class="xw-cell" style="width:${cellSize}px;height:${cellSize}px;">
-          ${cell.number ? `<span class="num">${cell.number}</span>` : ''}
+          ${numLabel ? `<span class="num">${numLabel}</span>` : ''}
           <span style="font-family:'Outfit',sans-serif; font-weight:700; font-size:${cellSize * 0.42}px;">${cell.letter}</span>
         </div>`;
       }

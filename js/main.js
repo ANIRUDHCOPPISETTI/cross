@@ -30,6 +30,13 @@ let lastCompletedAt = null;
 
 function cellId(r, c) { return `cell-${r}-${c}`; }
 
+/** A cell can start both an across and a down word (with different numbers,
+ *  since numbering runs Across 1..N then Down N+1..M) — show both, joined. */
+function cellNumberLabel(cell) {
+  const nums = [cell.acrossNumber, cell.downNumber].filter(n => n != null);
+  return nums.join(',');
+}
+
 /** Largest cell size (px) that fits the current viewport width for a grid
  *  with `cols` columns, capped at `cap`. Re-run on resize so the puzzle
  *  always fits on screen instead of forcing horizontal scroll on phones. */
@@ -238,7 +245,7 @@ async function puzzleHtml(p) {
       } else {
         gridHtml += `
           <div class="xw-cell" id="${cellId(r, c)}" data-r="${r}" data-c="${c}">
-            ${cell.number ? `<span class="num">${cell.number}</span>` : ''}
+            ${cellNumberLabel(cell) ? `<span class="num">${cellNumberLabel(cell)}</span>` : ''}
             <input type="text" maxlength="1" id="input-${r}-${c}" autocomplete="off" spellcheck="false">
           </div>`;
       }
@@ -284,7 +291,7 @@ async function revealedSectionHtml(p, dateStr) {
         gridHtml += `<div class="xw-cell blocked"></div>`;
       } else {
         gridHtml += `<div class="xw-cell correct">
-          ${cell.number ? `<span class="num">${cell.number}</span>` : ''}
+          ${cellNumberLabel(cell) ? `<span class="num">${cellNumberLabel(cell)}</span>` : ''}
           <span class="revealed-letter">${cell.letter}</span>
         </div>`;
       }
