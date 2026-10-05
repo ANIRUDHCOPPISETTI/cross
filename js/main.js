@@ -1,11 +1,11 @@
 /* main.js — renders the scheduled daily puzzle and drives solving interactions.
 
    Schedule rules:
-   - The puzzle "live" for solving before 9:00 AM local time is still the previous
-     day's puzzle; at 9:00 AM it rolls over to today's (if the admin published one).
-   - From 8:45 AM until 9:00 AM, the about-to-roll-over puzzle is locked (read-only)
+   - The puzzle "live" for solving before 8:40 AM local time is still the previous
+     day's puzzle; at 8:40 AM it rolls over to today's (if the admin published one).
+   - From 8:35 AM until 8:40 AM, the about-to-roll-over puzzle is locked (read-only)
      so answers can't sneak in right before it's revealed.
-   - At 9:00 AM, the puzzle that just rolled off becomes "revealed": its full
+   - At 8:40 AM, the puzzle that just rolled off becomes "revealed": its full
      answers + explanations are shown read-only in a separate panel.
 */
 
@@ -13,8 +13,8 @@ const app = document.getElementById('app');
 const progressBadge = document.getElementById('progressBadge');
 const puzzleDateEl = document.getElementById('puzzleDate');
 
-const LOCK_START_MIN = 8 * 60 + 45; // 08:45
-const ROLLOVER_MIN = 9 * 60;        // 09:00
+const LOCK_START_MIN = 8 * 60 + 35; // 08:35
+const ROLLOVER_MIN = 8 * 60 + 40;   // 08:40
 const POLL_MS = 15000;
 
 let puzzle = null;
@@ -199,7 +199,7 @@ function updateBanner(sched) {
   if (!el) return;
   if (sched.isLocked) {
     const mins = minutesUntil(ROLLOVER_MIN, sched.minutesNow);
-    el.innerHTML = `<div class="glass lock-banner">🔒 Locked for the 9:00 AM switchover — new puzzle unlocks in ${mins} minute${mins === 1 ? '' : 's'}.</div>`;
+    el.innerHTML = `<div class="glass lock-banner">🔒 Locked for the 8:40 AM switchover — new puzzle unlocks in ${mins} minute${mins === 1 ? '' : 's'}.</div>`;
     setLockedUI(true);
   } else if (!puzzle) {
     el.innerHTML = `<div class="glass lock-banner">⏳ Today's puzzle hasn't been uploaded yet. Check back soon, or visit the admin panel to publish it.</div>`;
@@ -221,7 +221,7 @@ function emptyStateHtml() {
   return `
     <div class="glass empty-state">
       <h2>No puzzle published for today</h2>
-      <p>Check back soon — a new crossword goes live at 9:00 AM.</p>
+      <p>Check back soon — a new crossword goes live at 8:40 AM.</p>
     </div>
   `;
 }
@@ -258,7 +258,7 @@ async function puzzleHtml(p) {
           </div>
           <div class="timer" id="timerEl">00:00</div>
         </div>
-        <div class="toolbar-note">Check puzzle grades whole words, not individual letters. No reveal or reset — answers &amp; explanations unlock automatically at 9:00 AM the next day.</div>
+        <div class="toolbar-note">Check puzzle grades whole words, not individual letters. No reveal or reset — answers &amp; explanations unlock automatically at 8:40 AM the next day.</div>
         <div class="grid-wrap">${gridHtml}</div>
       </div>
       <div class="glass clues-panel">

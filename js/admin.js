@@ -74,7 +74,7 @@ function wordRowsHtml(prefix, count, saved) {
       <div class="word-row">
         <div class="slot-no">#${i + 1}</div>
         <div style="display:flex; flex-direction:column; gap:6px;">
-          <input type="text" id="${prefix}-word-${i}" placeholder="WORD (optional)" value="${esc(w)}" maxlength="15" style="text-transform:uppercase;">
+          <input type="text" id="${prefix}-word-${i}" placeholder="WORD (optional)" value="${esc(w)}" maxlength="20" style="text-transform:uppercase;">
           <input type="text" id="${prefix}-clue-${i}" placeholder="Clue for this word" value="${esc(c)}">
           <input type="text" id="${prefix}-expl-${i}" placeholder="Explanation (shown when answers are revealed)" value="${esc(x)}">
         </div>
@@ -102,7 +102,7 @@ async function renderPanel() {
           <input type="text" id="puzzleDate" placeholder="YYYY-MM-DD">
         </div>
       </div>
-      <div class="hint" style="margin-top:12px;">This puzzle becomes the live, solvable crossword for everyone at 9:00 AM on the date above. At 8:45 AM the previous day's puzzle locks, and at 9:00 AM its answers + explanations are revealed automatically.</div>
+      <div class="hint" style="margin-top:12px;">This puzzle becomes the live, solvable crossword for everyone at 8:40 AM on the date above. At 8:35 AM the previous day's puzzle locks, and at 8:40 AM its answers + explanations are revealed automatically.</div>
       <details class="change-pw">
         <summary>Change admin password</summary>
         <div class="pw-form">
@@ -388,6 +388,7 @@ function filterAndValidate(rows, label) {
     if (!r.word) return { error: `A ${label} row has a clue/explanation but no word — add the word or clear the row.` };
     if (!/^[A-Za-z]+$/.test(r.word)) return { error: `"${r.word}" is invalid — words must contain letters only, no spaces or numbers.` };
     if (r.word.length < 2) return { error: `"${r.word}" is too short — use words with at least 2 letters.` };
+    if (r.word.length > 20) return { error: `"${r.word}" is too long — words can be at most 20 letters.` };
     if (!r.clue) return { error: `Please add a clue for "${r.word}".` };
   }
   return { rows: rows.filter(r => r.word) };
