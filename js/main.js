@@ -30,6 +30,31 @@ let lastCompletedAt = null;
 
 function cellId(r, c) { return `cell-${r}-${c}`; }
 
+/** Largest cell size (px) that fits the current viewport width for a grid
+ *  with `cols` columns, capped at `cap`. Re-run on resize so the puzzle
+ *  always fits on screen instead of forcing horizontal scroll on phones. */
+function computeCellSize(cols, cap) {
+  const pagePadding = 100; // .page (24*2) + .grid-panel (22*2) + .grid-wrap (8*2) horizontal padding
+  const available = Math.min(window.innerWidth - pagePadding, 560);
+  const size = Math.floor(available / cols);
+  return Math.max(24, Math.min(cap, size));
+}
+
+let resizeTimer = null;
+/** Applies to every grid on the page (live + the revealed read-only one),
+ *  each tagged with data-cols/data-cap when rendered. */
+function applyResponsiveCellSize() {
+  document.querySelectorAll('.xw-grid[data-cols]').forEach(grid => {
+    const cols = Number(grid.dataset.cols);
+    const cap = Number(grid.dataset.cap);
+    grid.style.setProperty('--cell-size', computeCellSize(cols, cap) + 'px');
+  });
+}
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(applyResponsiveCellSize, 150);
+});
+
 function esc(s) {
   const d = document.createElement('div');
   d.textContent = s;
@@ -65,7 +90,18 @@ async function tick() {
     await fullRender(sched);
   } else {
     updateBanner(sched);
+    refreshLiveLeaderboardPanel();
   }
+}
+
+/** Quietly refreshes just the leaderboard panel's contents (no full re-render,
+ *  so it doesn't disturb typing/focus) so it updates as others finish solving. */
+async function refreshLiveLeaderboardPanel() {
+  const el = document.getElementById('liveLeaderboard');
+  if (!el || !liveDate) return;
+  try {
+    el.innerHTML = await leaderboardHtml(liveDate, lastCompletedAt);
+  } catch (e) { /* leave existing content on failure */ }
 }
 
 function init() {
@@ -93,7 +129,7 @@ async function fullRender(sched) {
 
   if (puzzle) {
     puzzleDateEl.textContent = puzzle.title + ' · ' + liveDate;
-    html += started ? puzzleHtml(puzzle) : startGateHtml(puzzle);
+    html += started ? await puzzleHtml(puzzle) : await startGateHtml(puzzle);
   } else {
     puzzleDateEl.textContent = 'No puzzle live right now';
     html += emptyStateHtml();
@@ -103,6 +139,7 @@ async function fullRender(sched) {
 
   app.innerHTML = html;
   updateBanner(sched);
+  applyResponsiveCellSize();
 
   if (puzzle && started) {
     playerName = progress.playerName || loadPlayerName();
@@ -122,8 +159,9 @@ async function fullRender(sched) {
   }
 }
 
-function startGateHtml(p) {
+async function startGateHtml(p) {
   const savedName = loadPlayerName();
+  const lb = await leaderboardHtml(liveDate);
   return `
     <h1 class="gradient-text puzzle-title">${esc(p.title)}</h1>
     <div class="glass start-gate">
@@ -136,6 +174,7 @@ function startGateHtml(p) {
       </form>
       <div class="login-error" id="startError"></div>
     </div>
+    <div class="glass live-leaderboard-card" id="liveLeaderboard">${lb}</div>
   `;
 }
 
@@ -187,17 +226,18 @@ function emptyStateHtml() {
   `;
 }
 
-function puzzleHtml(p) {
-  const cellSize = p.width > 16 ? 30 : (p.width > 11 ? 38 : 44);
-  let gridHtml = `<div class="xw-grid" id="xwGrid" style="grid-template-columns: repeat(${p.width}, ${cellSize}px);">`;
+async function puzzleHtml(p) {
+  const cap = p.width > 16 ? 30 : (p.width > 11 ? 38 : 44);
+  const initialSize = computeCellSize(p.width, cap);
+  let gridHtml = `<div class="xw-grid" id="xwGrid" data-cols="${p.width}" data-cap="${cap}" style="--cell-size:${initialSize}px; grid-template-columns: repeat(${p.width}, var(--cell-size));">`;
   for (let r = 0; r < p.height; r++) {
     for (let c = 0; c < p.width; c++) {
       const cell = p.cells[r][c];
       if (cell.blocked) {
-        gridHtml += `<div class="xw-cell blocked" style="width:${cellSize}px;height:${cellSize}px;"></div>`;
+        gridHtml += `<div class="xw-cell blocked"></div>`;
       } else {
         gridHtml += `
-          <div class="xw-cell" id="${cellId(r, c)}" data-r="${r}" data-c="${c}" style="width:${cellSize}px;height:${cellSize}px;">
+          <div class="xw-cell" id="${cellId(r, c)}" data-r="${r}" data-c="${c}">
             ${cell.number ? `<span class="num">${cell.number}</span>` : ''}
             <input type="text" maxlength="1" id="input-${r}-${c}" autocomplete="off" spellcheck="false">
           </div>`;
@@ -205,6 +245,8 @@ function puzzleHtml(p) {
     }
   }
   gridHtml += `</div>`;
+
+  const lb = await leaderboardHtml(liveDate, lastCompletedAt);
 
   return `
     <h1 class="gradient-text puzzle-title">${esc(p.title)}</h1>
@@ -220,6 +262,7 @@ function puzzleHtml(p) {
         <div class="grid-wrap">${gridHtml}</div>
       </div>
       <div class="glass clues-panel">
+        <div class="live-leaderboard-inline" id="liveLeaderboard">${lb}</div>
         <div class="clues-tabs">
           <div class="clues-tab active" data-dir="across">Across</div>
           <div class="clues-tab" data-dir="down">Down</div>
@@ -231,17 +274,18 @@ function puzzleHtml(p) {
 }
 
 async function revealedSectionHtml(p, dateStr) {
-  const cellSize = p.width > 16 ? 20 : (p.width > 11 ? 24 : 28);
-  let gridHtml = `<div class="xw-grid" style="grid-template-columns: repeat(${p.width}, ${cellSize}px);">`;
+  const cap = p.width > 16 ? 20 : (p.width > 11 ? 24 : 28);
+  const initialSize = computeCellSize(p.width, cap);
+  let gridHtml = `<div class="xw-grid revealed-grid" data-cols="${p.width}" data-cap="${cap}" style="--cell-size:${initialSize}px; grid-template-columns: repeat(${p.width}, var(--cell-size));">`;
   for (let r = 0; r < p.height; r++) {
     for (let c = 0; c < p.width; c++) {
       const cell = p.cells[r][c];
       if (cell.blocked) {
-        gridHtml += `<div class="xw-cell blocked" style="width:${cellSize}px;height:${cellSize}px;"></div>`;
+        gridHtml += `<div class="xw-cell blocked"></div>`;
       } else {
-        gridHtml += `<div class="xw-cell correct" style="width:${cellSize}px;height:${cellSize}px;">
+        gridHtml += `<div class="xw-cell correct">
           ${cell.number ? `<span class="num">${cell.number}</span>` : ''}
-          <span style="font-family:'Outfit',sans-serif; font-weight:700; font-size:${cellSize * 0.42}px; color:var(--ok);">${cell.letter}</span>
+          <span class="revealed-letter">${cell.letter}</span>
         </div>`;
       }
     }
@@ -251,8 +295,9 @@ async function revealedSectionHtml(p, dateStr) {
   function explList(clues) {
     return clues.map(c => `
       <div class="expl-item">
-        <div class="expl-head"><span class="n">${c.number}.</span> ${esc(c.clue)} — <strong>${esc(c.answer)}</strong></div>
-        ${c.explanation ? `<div class="expl-body">${esc(c.explanation)}</div>` : ''}
+        <div class="expl-row"><span class="expl-label">Q${c.number}.</span> ${esc(c.clue)}</div>
+        <div class="expl-row"><span class="expl-label">Answer:</span> <strong>${esc(c.answer)}</strong></div>
+        ${c.explanation ? `<div class="expl-row"><span class="expl-label">Explanation:</span> ${esc(c.explanation)}</div>` : ''}
       </div>
     `).join('');
   }
@@ -583,6 +628,7 @@ async function onSolved() {
   }
   loadResponses(liveDate).then(list => syncResponsesFile(liveDate, list)).catch(() => {});
   updateCheckButtonState();
+  refreshLiveLeaderboardPanel();
   await showModal();
 }
 
