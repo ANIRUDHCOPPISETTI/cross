@@ -579,6 +579,31 @@ input::placeholder { color: var(--text-2); }
   padding-top: 11px;
 }
 
+/* ---------- Manual placement mode ---------- */
+
+.manual-controls:empty { display: none; }
+.manual-status {
+  font-size: 12px;
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.manual-grid { box-shadow: var(--shadow-sm); }
+.manual-cell {
+  background: #fafafd;
+  border-radius: 4px;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-0);
+  cursor: default;
+  user-select: none;
+  transition: background .15s var(--ease), outline-color .15s var(--ease);
+}
+.manual-cell.filled { background: var(--cell-bg-word); }
+.manual-cell.armable { cursor: pointer; }
+.manual-cell.armable:hover { background: rgba(79,70,229,0.12); outline: 2px solid var(--accent-1); outline-offset: -2px; }
+
 .archive-row {
   display: grid;
   grid-template-columns: 1fr auto;

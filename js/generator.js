@@ -136,39 +136,42 @@ function runAttempt(acrossWords, downWords) {
   return { placements, occupied, disconnected: remaining.length, area, minR, minC, maxR, maxC };
 }
 
-function buildPuzzleFromResult(result, title) {
-  const { placements, occupied, minR, minC, maxR, maxC } = result;
-  const height = maxR - minR + 1;
-  const width = maxC - minC + 1;
-
+/** Builds the width x height cell grid from an "r,c" -> letter map, with an
+ *  (originR, originC) offset so auto-mode (trimmed to its bounding box) and
+ *  manual mode (fixed at the admin's chosen size, origin 0,0) can share it. */
+function buildCellsGrid(width, height, occupied, originR, originC) {
   const cells = Array.from({ length: height }, () =>
     Array.from({ length: width }, () => ({ letter: null, blocked: true, acrossNumber: null, downNumber: null }))
   );
-
   for (const [k, letter] of occupied.entries()) {
     const [r, c] = k.split(',').map(Number);
-    cells[r - minR][c - minC] = { letter, blocked: false, acrossNumber: null, downNumber: null };
+    const rr = r - originR, cc = c - originC;
+    if (rr < 0 || rr >= height || cc < 0 || cc >= width) continue;
+    cells[rr][cc] = { letter, blocked: false, acrossNumber: null, downNumber: null };
   }
+  return cells;
+}
 
-  // Numbered by the admin's original input order (Across rows top-to-bottom,
-  // then Down rows), not by where the layout search happened to place them —
-  // e.g. Across row #1 is always numbered 1, regardless of grid position.
+/** Numbers clues by the admin's original input order (Across rows top-to-bottom,
+ *  then Down rows) rather than grid position, and assembles the final puzzle
+ *  object. Shared by both the auto-layout search and manual placement. */
+function finalizePuzzle(cells, width, height, placements, originR, originC, title, disconnected) {
   const acrossPlacements = placements.filter(p => p.dir === 'across').sort((a, b) => a.idx - b.idx);
   const downPlacements = placements.filter(p => p.dir === 'down').sort((a, b) => a.idx - b.idx);
 
   let num = 1;
   const acrossClues = [];
   for (const p of acrossPlacements) {
-    const r = p.row - minR;
-    const c = p.col - minC;
+    const r = p.row - originR;
+    const c = p.col - originC;
     cells[r][c].acrossNumber = num;
     acrossClues.push({ number: num, clue: p.clue, explanation: p.explanation || '', answer: p.word, row: r, col: c, length: p.word.length });
     num++;
   }
   const downClues = [];
   for (const p of downPlacements) {
-    const r = p.row - minR;
-    const c = p.col - minC;
+    const r = p.row - originR;
+    const c = p.col - originC;
     cells[r][c].downNumber = num;
     downClues.push({ number: num, clue: p.clue, explanation: p.explanation || '', answer: p.word, row: r, col: c, length: p.word.length });
     num++;
@@ -182,8 +185,59 @@ function buildPuzzleFromResult(result, title) {
     cells,
     acrossClues,
     downClues,
-    disconnected: result.disconnected,
+    disconnected,
   };
+}
+
+function buildPuzzleFromResult(result, title) {
+  const { placements, occupied, minR, minC, maxR, maxC } = result;
+  const height = maxR - minR + 1;
+  const width = maxC - minC + 1;
+  const cells = buildCellsGrid(width, height, occupied, minR, minC);
+  return finalizePuzzle(cells, width, height, placements, minR, minC, title, result.disconnected);
+}
+
+/**
+ * Builds a puzzle from admin-chosen placements (manual mode) — no layout
+ * search, no trimming: the grid is exactly the chosen width/height, and every
+ * word sits exactly where the admin clicked.
+ *
+ * acrossRows / downRows: [{ word, clue, explanation, row, col } | null] —
+ * null entries (not yet placed) are skipped.
+ */
+function buildManualCrossword(acrossRows, downRows, width, height, title) {
+  const clean = (rows, dir) => rows
+    .map((w, idx) => w && { ...w, word: cleanWord(w.word), clue: (w.clue || '').trim(), explanation: (w.explanation || '').trim(), dir, idx })
+    .filter(Boolean);
+
+  const across = clean(acrossRows, 'across');
+  const down = clean(downRows, 'down');
+
+  if (across.length === 0 || down.length === 0) {
+    throw new Error('Place at least one Across word and one Down word on the grid.');
+  }
+
+  const occupied = new Map();
+  const placements = [];
+  for (const p of [...across, ...down]) {
+    for (let i = 0; i < p.word.length; i++) {
+      const r = p.dir === 'across' ? p.row : p.row + i;
+      const c = p.dir === 'across' ? p.col + i : p.col;
+      if (r < 0 || r >= height || c < 0 || c >= width) {
+        throw new Error(`"${p.word}" doesn't fit on the grid — move it or enlarge the grid.`);
+      }
+      const key = cwKey(r, c);
+      const existing = occupied.get(key);
+      if (existing !== undefined && existing !== p.word[i]) {
+        throw new Error(`"${p.word}" conflicts with another word at row ${r + 1}, column ${c + 1}.`);
+      }
+      occupied.set(key, p.word[i]);
+    }
+    placements.push(p);
+  }
+
+  const cells = buildCellsGrid(width, height, occupied, 0, 0);
+  return finalizePuzzle(cells, width, height, placements, 0, 0, title, 0);
 }
 
 /**

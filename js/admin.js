@@ -8,6 +8,13 @@ const logoutBtn = document.getElementById('logoutBtn');
 
 let draftSaveTimer = null;
 
+/* ---------- Manual placement mode state ---------- */
+let mode = 'auto'; // 'auto' | 'manual'
+let manualWidth = 10;
+let manualHeight = 10;
+let manualPlacements = { across: [null, null, null, null, null], down: [null, null, null, null, null] };
+let armedSlot = null; // { dir, index } — word waiting for a cell click, or null
+
 function esc(s) {
   const d = document.createElement('div');
   d.textContent = s;
@@ -73,10 +80,11 @@ function wordRowsHtml(prefix, count, saved) {
     html += `
       <div class="word-row">
         <div class="slot-no">#${i + 1}</div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
+        <div style="display:flex; flex-direction:column; gap:6px; flex:1;">
           <input type="text" id="${prefix}-word-${i}" placeholder="WORD (optional)" value="${esc(w)}" maxlength="20" style="text-transform:uppercase;">
           <input type="text" id="${prefix}-clue-${i}" placeholder="Clue for this word" value="${esc(c)}">
           <input type="text" id="${prefix}-expl-${i}" placeholder="Explanation (shown when answers are revealed)" value="${esc(x)}">
+          <div class="manual-controls" id="manual-ctrl-${prefix}-${i}"></div>
         </div>
       </div>
     `;
@@ -87,6 +95,8 @@ function wordRowsHtml(prefix, count, saved) {
 function todayStr() { return localDateStr(new Date()); }
 
 async function renderPanel() {
+  mode = 'auto'; // fresh panel render always starts in auto mode (matches the default HTML below)
+  armedSlot = null;
   const draft = loadDraft();
   const defaultDate = draft?.date || todayStr();
 
@@ -125,6 +135,35 @@ async function renderPanel() {
       </div>
     </div>
 
+    <div class="glass" style="padding:18px 22px; margin-bottom:20px;">
+      <div class="settings-row" style="margin-bottom:0; justify-content:space-between;">
+        <div>
+          <label class="field-label">Placement mode</label>
+          <div class="clues-tabs" id="modeTabs" style="width:280px;">
+            <div class="clues-tab active" data-mode="auto">Auto-generate</div>
+            <div class="clues-tab" data-mode="manual">Manual placement</div>
+          </div>
+        </div>
+        <div id="manualGridControls" style="display:none; align-items:flex-end; gap:10px;">
+          <div>
+            <label class="field-label">Width</label>
+            <input type="text" id="manualWidthInput" value="10" style="width:64px;">
+          </div>
+          <div>
+            <label class="field-label">Height</label>
+            <input type="text" id="manualHeightInput" value="10" style="width:64px;">
+          </div>
+          <button class="btn btn-ghost" id="buildGridBtn" type="button">Build empty grid</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass preview-section" id="manualGridSection" style="display:none;">
+      <h3>Click-to-Place Grid</h3>
+      <div class="hint" id="manualGridInstructions" style="margin-bottom:12px;">Click "📍 Place on grid" next to a word below, then click its starting cell here.</div>
+      <div class="grid-wrap" id="manualGridInner" style="padding:0;"></div>
+    </div>
+
     <div class="error-banner" id="errorBanner"></div>
 
     <div class="admin-grid">
@@ -151,7 +190,7 @@ async function renderPanel() {
     <div class="glass preview-section" id="previewSection" style="display:none;">
       <h3>Live Preview</h3>
       <div id="previewGrid"></div>
-      <div class="preview-note">This is how the auto-generated grid will look. Publish to make it live for everyone on the selected date.</div>
+      <div class="preview-note">This is how the final numbered grid will look. Publish to make it live for everyone on the selected date.</div>
     </div>
 
     <div class="glass preview-section" id="archiveSection">
@@ -195,6 +234,24 @@ async function renderPanel() {
 
   document.getElementById('previewBtn').addEventListener('click', () => generate(false));
   document.getElementById('publishBtn').addEventListener('click', () => generate(true));
+
+  document.querySelectorAll('#modeTabs .clues-tab').forEach(tab => {
+    tab.addEventListener('click', () => setMode(tab.dataset.mode));
+  });
+  document.getElementById('buildGridBtn').addEventListener('click', () => {
+    const w = Math.max(3, Math.min(25, Number(document.getElementById('manualWidthInput').value) || 10));
+    const h = Math.max(3, Math.min(25, Number(document.getElementById('manualHeightInput').value) || 10));
+    const hasPlacements = manualPlacements.across.some(Boolean) || manualPlacements.down.some(Boolean);
+    if (hasPlacements && !confirm('Rebuilding the grid will clear all current placements. Continue?')) return;
+    manualWidth = w;
+    manualHeight = h;
+    document.getElementById('manualWidthInput').value = w;
+    document.getElementById('manualHeightInput').value = h;
+    manualPlacements = { across: [null, null, null, null, null], down: [null, null, null, null, null] };
+    armedSlot = null;
+    renderManualControls();
+    renderManualGrid();
+  });
 
   refreshFolderStatus();
   document.getElementById('connectFolderBtn').addEventListener('click', async () => {
@@ -247,6 +304,25 @@ async function loadFormForDate(dateStr, draft) {
   document.getElementById('downRows').innerHTML = wordRowsHtml('down', 5, down);
   document.getElementById('puzzleTitle').value = title;
 
+  // Restore the grid layout (size + per-word position) from whatever puzzle
+  // already exists for this date, so switching to Manual mode shows it —
+  // and lets the admin tweak an auto-generated layout by hand if they want.
+  if (existing) {
+    manualWidth = existing.width;
+    manualHeight = existing.height;
+    manualPlacements = {
+      across: Array.from({ length: 5 }, (_, i) => existing.acrossClues[i] ? { row: existing.acrossClues[i].row, col: existing.acrossClues[i].col } : null),
+      down: Array.from({ length: 5 }, (_, i) => existing.downClues[i] ? { row: existing.downClues[i].row, col: existing.downClues[i].col } : null),
+    };
+  } else {
+    manualWidth = 10;
+    manualHeight = 10;
+    manualPlacements = { across: [null, null, null, null, null], down: [null, null, null, null, null] };
+  }
+  armedSlot = null;
+  const mw = document.getElementById('manualWidthInput'); if (mw) mw.value = manualWidth;
+  const mh = document.getElementById('manualHeightInput'); if (mh) mh.value = manualHeight;
+
   for (const prefix of ['across', 'down']) {
     for (let i = 0; i < 5; i++) {
       const el = document.getElementById(`${prefix}-word-${i}`);
@@ -254,10 +330,18 @@ async function loadFormForDate(dateStr, draft) {
         const pos = el.selectionStart;
         el.value = el.value.toUpperCase();
         el.setSelectionRange(pos, pos);
+        if (mode === 'manual' && manualPlacements[prefix][i]) {
+          manualPlacements[prefix][i] = null;
+          renderManualControls();
+          renderManualGrid();
+          showToast('Word changed — placement cleared, click "Place on grid" again.', true);
+        }
       });
     }
   }
   attachAutosave();
+  renderManualControls();
+  renderManualGrid();
 }
 
 function attachAutosave() {
@@ -277,6 +361,145 @@ function saveCurrentDraft() {
     title: document.getElementById('puzzleTitle').value.trim(),
     across,
     down,
+  });
+}
+
+/* ---------- Manual placement mode ---------- */
+
+function setMode(newMode) {
+  mode = newMode;
+  armedSlot = null;
+  document.querySelectorAll('#modeTabs .clues-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+  const controls = document.getElementById('manualGridControls');
+  if (controls) controls.style.display = mode === 'manual' ? 'flex' : 'none';
+  renderManualControls();
+  renderManualGrid();
+}
+
+/** Renders the Place/Remove button + status beneath each word row. Doesn't
+ *  touch the word/clue/explanation inputs, so it's safe to call on its own. */
+function renderManualControls() {
+  for (const dir of ['across', 'down']) {
+    for (let i = 0; i < 5; i++) {
+      const el = document.getElementById(`manual-ctrl-${dir}-${i}`);
+      if (!el) continue;
+      if (mode !== 'manual') { el.innerHTML = ''; continue; }
+
+      const placement = manualPlacements[dir][i];
+      const isArmed = armedSlot && armedSlot.dir === dir && armedSlot.index === i;
+
+      if (placement) {
+        el.innerHTML = `
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span class="manual-status">📍 Placed at row ${placement.row + 1}, col ${placement.col + 1}</span>
+            <button class="btn btn-ghost" type="button" style="padding:4px 10px; font-size:12px;">Remove</button>
+          </div>
+        `;
+        el.querySelector('button').addEventListener('click', () => {
+          manualPlacements[dir][i] = null;
+          renderManualControls();
+          renderManualGrid();
+        });
+      } else {
+        el.innerHTML = `<button class="btn ${isArmed ? 'btn-primary' : 'btn-ghost'}" type="button" style="padding:4px 10px; font-size:12px;">${isArmed ? 'Click a cell on the grid →' : '📍 Place on grid'}</button>`;
+        el.querySelector('button').addEventListener('click', () => {
+          const wordVal = document.getElementById(`${dir}-word-${i}`).value.trim();
+          if (!wordVal) { showToast('Type a word in this row first.', true); return; }
+          if (!/^[A-Za-z]+$/.test(wordVal)) { showToast('Words must contain letters only.', true); return; }
+          armedSlot = isArmed ? null : { dir, index: i };
+          renderManualControls();
+          renderManualGrid();
+        });
+      }
+    }
+  }
+}
+
+/** Current letters on the manual grid, derived from placements + live word
+ *  text, excluding one optional slot (used while re-validating that slot). */
+function manualLetterMap(excludeDir, excludeIndex) {
+  const map = {};
+  for (const dir of ['across', 'down']) {
+    manualPlacements[dir].forEach((p, i) => {
+      if (!p) return;
+      if (dir === excludeDir && i === excludeIndex) return;
+      const word = cleanWord(document.getElementById(`${dir}-word-${i}`)?.value || '');
+      for (let k = 0; k < word.length; k++) {
+        const r = dir === 'across' ? p.row : p.row + k;
+        const c = dir === 'across' ? p.col + k : p.col;
+        map[r + ',' + c] = word[k];
+      }
+    });
+  }
+  return map;
+}
+
+function renderManualGrid() {
+  const section = document.getElementById('manualGridSection');
+  if (!section) return;
+  if (mode !== 'manual') { section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  const instrEl = document.getElementById('manualGridInstructions');
+  if (instrEl) {
+    instrEl.textContent = armedSlot
+      ? `Click a cell to place ${armedSlot.dir === 'across' ? 'Across' : 'Down'} #${armedSlot.index + 1} →`
+      : 'Click "📍 Place on grid" next to a word below, then click its starting cell here.';
+  }
+
+  const letterMap = manualLetterMap(null, null);
+  const cellSize = manualWidth > 16 ? 26 : (manualWidth > 11 ? 30 : 36);
+  let html = `<div class="xw-grid manual-grid" style="grid-template-columns: repeat(${manualWidth}, ${cellSize}px);">`;
+  for (let r = 0; r < manualHeight; r++) {
+    for (let c = 0; c < manualWidth; c++) {
+      const letter = letterMap[r + ',' + c];
+      html += `<div class="xw-cell manual-cell${letter ? ' filled' : ''}${armedSlot ? ' armable' : ''}" data-r="${r}" data-c="${c}" style="width:${cellSize}px;height:${cellSize}px;">${letter || ''}</div>`;
+    }
+  }
+  html += `</div>`;
+  const inner = document.getElementById('manualGridInner');
+  inner.innerHTML = html;
+  inner.querySelectorAll('.manual-cell').forEach(cell => {
+    cell.addEventListener('click', () => handleManualCellClick(Number(cell.dataset.r), Number(cell.dataset.c)));
+  });
+}
+
+function handleManualCellClick(row, col) {
+  if (!armedSlot) { showToast('Click "📍 Place on grid" next to a word first.', true); return; }
+  const { dir, index } = armedSlot;
+  const wordVal = cleanWord(document.getElementById(`${dir}-word-${index}`).value);
+  if (!wordVal) { showToast('That word is empty.', true); armedSlot = null; renderManualControls(); return; }
+
+  const fits = dir === 'across' ? (col + wordVal.length <= manualWidth) : (row + wordVal.length <= manualHeight);
+  if (!fits) { showToast(`"${wordVal}" doesn't fit there — try a different cell or enlarge the grid.`, true); return; }
+
+  const letterMap = manualLetterMap(dir, index);
+  for (let k = 0; k < wordVal.length; k++) {
+    const r = dir === 'across' ? row : row + k;
+    const c = dir === 'across' ? col + k : col;
+    const existing = letterMap[r + ',' + c];
+    if (existing !== undefined && existing !== wordVal[k]) {
+      showToast(`Conflicts with an existing letter at row ${r + 1}, col ${c + 1}.`, true);
+      return;
+    }
+  }
+
+  manualPlacements[dir][index] = { row, col };
+  armedSlot = null;
+  renderManualControls();
+  renderManualGrid();
+}
+
+/** Builds the {word, clue, explanation, row, col}|null rows buildManualCrossword
+ *  expects, pairing each placed slot with its current input values. */
+function buildManualRows(dir) {
+  return manualPlacements[dir].map((p, i) => {
+    if (!p) return null;
+    const word = document.getElementById(`${dir}-word-${i}`).value.trim();
+    const clue = document.getElementById(`${dir}-clue-${i}`).value.trim();
+    const explanation = document.getElementById(`${dir}-expl-${i}`).value.trim();
+    if (!word || !clue) return null;
+    return { word, clue, explanation, row: p.row, col: p.col };
   });
 }
 
@@ -420,13 +643,32 @@ async function generate(publish) {
     return;
   }
 
+  if (mode === 'manual') {
+    const unplaced = [];
+    for (const dir of ['across', 'down']) {
+      for (let i = 0; i < 5; i++) {
+        const word = document.getElementById(`${dir}-word-${i}`).value.trim();
+        if (word && !manualPlacements[dir][i]) unplaced.push(`${dir === 'across' ? 'Across' : 'Down'} #${i + 1}`);
+      }
+    }
+    if (unplaced.length > 0) {
+      banner.textContent = `These words have text but haven't been placed on the grid yet: ${unplaced.join(', ')}. Click "📍 Place on grid" for each, or clear the word.`;
+      banner.classList.add('show');
+      return;
+    }
+  }
+
   const title = document.getElementById('puzzleTitle').value.trim() || 'Daily Crossword';
 
   let puzzle;
   try {
-    puzzle = generateCrossword(acrossResult.rows, downResult.rows, title);
+    if (mode === 'manual') {
+      puzzle = buildManualCrossword(buildManualRows('across'), buildManualRows('down'), manualWidth, manualHeight, title);
+    } else {
+      puzzle = generateCrossword(acrossResult.rows, downResult.rows, title);
+    }
   } catch (e) {
-    banner.textContent = e.message || 'Could not generate the crossword from these words.';
+    banner.textContent = e.message || 'Could not build the crossword from these words.';
     banner.classList.add('show');
     return;
   }
