@@ -141,44 +141,42 @@ function runAttempt(acrossWords, downWords) {
  *  manual mode (fixed at the admin's chosen size, origin 0,0) can share it. */
 function buildCellsGrid(width, height, occupied, originR, originC) {
   const cells = Array.from({ length: height }, () =>
-    Array.from({ length: width }, () => ({ letter: null, blocked: true, number: null }))
+    Array.from({ length: width }, () => ({ letter: null, blocked: true, acrossNumber: null, downNumber: null }))
   );
   for (const [k, letter] of occupied.entries()) {
     const [r, c] = k.split(',').map(Number);
     const rr = r - originR, cc = c - originC;
     if (rr < 0 || rr >= height || cc < 0 || cc >= width) continue;
-    cells[rr][cc] = { letter, blocked: false, number: null };
+    cells[rr][cc] = { letter, blocked: false, acrossNumber: null, downNumber: null };
   }
   return cells;
 }
 
-/** Traditional crossword numbering: scans the grid top-to-bottom, left-to-right;
- *  a cell gets the next number if it starts an across and/or down word there
- *  (shared between both if it starts both), so numbers always increase in
- *  reading order. Assembles the final puzzle object — shared by both the
- *  auto-layout search and manual placement. */
+/** Numbers by the admin's input order: all Across clues get 1..N (in the order
+ *  they were typed/placed), then all Down clues continue N+1..M — regardless
+ *  of where either ends up in the grid. Assembles the final puzzle object —
+ *  shared by both the auto-layout search and manual placement. */
 function finalizePuzzle(cells, width, height, placements, originR, originC, title, disconnected) {
-  let num = 1;
-  for (let r = 0; r < height; r++) {
-    for (let c = 0; c < width; c++) {
-      if (cells[r][c].blocked) continue;
-      const startsAcross = (c === 0 || cells[r][c - 1].blocked) && (c + 1 < width && !cells[r][c + 1].blocked);
-      const startsDown = (r === 0 || cells[r - 1][c].blocked) && (r + 1 < height && !cells[r + 1][c].blocked);
-      if (startsAcross || startsDown) cells[r][c].number = num++;
-    }
-  }
+  const acrossPlacements = placements.filter(p => p.dir === 'across').sort((a, b) => a.idx - b.idx);
+  const downPlacements = placements.filter(p => p.dir === 'down').sort((a, b) => a.idx - b.idx);
 
+  let num = 1;
   const acrossClues = [];
-  const downClues = [];
-  for (const p of placements) {
+  for (const p of acrossPlacements) {
     const r = p.row - originR;
     const c = p.col - originC;
-    const number = cells[r][c].number;
-    const entry = { number, clue: p.clue, explanation: p.explanation || '', answer: p.word, row: r, col: c, length: p.word.length };
-    if (p.dir === 'across') acrossClues.push(entry); else downClues.push(entry);
+    cells[r][c].acrossNumber = num;
+    acrossClues.push({ number: num, clue: p.clue, explanation: p.explanation || '', answer: p.word, row: r, col: c, length: p.word.length });
+    num++;
   }
-  acrossClues.sort((a, b) => a.number - b.number);
-  downClues.sort((a, b) => a.number - b.number);
+  const downClues = [];
+  for (const p of downPlacements) {
+    const r = p.row - originR;
+    const c = p.col - originC;
+    cells[r][c].downNumber = num;
+    downClues.push({ number: num, clue: p.clue, explanation: p.explanation || '', answer: p.word, row: r, col: c, length: p.word.length });
+    num++;
+  }
 
   return {
     title: title || 'Daily Crossword',
