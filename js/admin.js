@@ -112,7 +112,7 @@ async function renderPanel() {
           <input type="text" id="puzzleDate" placeholder="YYYY-MM-DD">
         </div>
       </div>
-      <div class="hint" style="margin-top:12px;">This puzzle becomes the live, solvable crossword for everyone at 8:40 AM on the date above. At 8:35 AM the previous day's puzzle locks, and at 8:40 AM its answers + explanations are revealed automatically.</div>
+      <div class="hint" style="margin-top:12px;">This puzzle becomes the live, solvable crossword for everyone at 7:35 AM on the date above. At 7:30 AM the previous day's puzzle locks, and at 7:35 AM its answers + explanations are revealed automatically.</div>
       <details class="change-pw">
         <summary>Change admin password</summary>
         <div class="pw-form">
