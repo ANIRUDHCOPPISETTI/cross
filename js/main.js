@@ -30,11 +30,14 @@ let lastCompletedAt = null;
 
 function cellId(r, c) { return `cell-${r}-${c}`; }
 
-/** A cell can start both an across and a down word (with different numbers,
- *  since numbering runs Across 1..N then Down N+1..M) — show both, joined. */
+/** Numbers run in standard crossword reading order (cell.number, shared by
+ *  across/down if a cell starts both). Falls back to the older acrossNumber/
+ *  downNumber fields so puzzles published under that short-lived scheme still
+ *  render correctly. */
 function cellNumberLabel(cell) {
+  if (cell.number != null) return String(cell.number);
   const nums = [cell.acrossNumber, cell.downNumber].filter(n => n != null);
-  return nums.join(',');
+  return [...new Set(nums)].join(',');
 }
 
 /** Largest cell size (px) that fits the current viewport width for a grid
